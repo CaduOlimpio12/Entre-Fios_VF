@@ -1,5 +1,6 @@
 import sys
 import os
+import uuid
 import streamlit as st
 import requests
 
@@ -24,6 +25,13 @@ if "lista_itens" not in st.session_state:
 if "resultado_consolidado" not in st.session_state:
     st.session_state.resultado_consolidado = None
 
+
+def _normalizar_item(item):
+    """Garante um identificador estável para cada item da lista."""
+    if "id" not in item:
+        item["id"] = str(uuid.uuid4())
+    return item
+
 st.title("📦 Entre-Fios: Sistema de Orçamentos")
 
 with st.expander("➕ Adicionar Produto ao Orçamento", expanded=True):
@@ -40,21 +48,22 @@ with st.expander("➕ Adicionar Produto ao Orçamento", expanded=True):
     with col3:
         st.info(f"📝 **Descrição:** {dados_p.get('descricao', 'Sem descrição.')}")
         if st.button("➕ Adicionar à Lista", type="primary"):
-            st.session_state.lista_itens.append({
+            st.session_state.lista_itens.append(_normalizar_item({
                 "fornecedor": f_sel, "produto": p_sel, "quantidade": q_sel,
                 "tamanho": tam_sel, "estampa_frente": ef_sel, "estampa_costas": ec_sel
-            })
+            }))
             st.rerun()
 
 if st.session_state.lista_itens:
+    st.session_state.lista_itens = [_normalizar_item(item) for item in st.session_state.lista_itens]
     st.subheader("📂 Itens do Orçamento")
-    for i, item in enumerate(st.session_state.lista_itens):
+    for item in st.session_state.lista_itens:
         with st.container(border=True):
             c1, c2, c3 = st.columns([6, 3, 1])
             c1.write(f"**{item['produto']}** ({item['fornecedor']}) - Qtd: {item['quantidade']}")
             c2.write(f"Tam: {item['tamanho']} | Estampas: {item['estampa_frente']}/{item['estampa_costas']}")
-            if c3.button("🗑️", key=f"del_{i}"):
-                st.session_state.lista_itens.pop(i)
+            if c3.button("🗑️", key=f"del_{item['id']}"):
+                st.session_state.lista_itens = [i for i in st.session_state.lista_itens if i["id"] != item["id"]]
                 st.rerun()
 
     st.divider()
@@ -66,7 +75,8 @@ if st.session_state.lista_itens:
         parc_sel = st.select_slider("Parcelas", options=list(TAXAS_PAGAMENTO[pag_sel].keys())) if pag_sel == "Crédito Parcelado" else 1
 
     if st.button("🧮 Calcular Orçamento Completo", type="primary"):
-        payload = {"itens": st.session_state.lista_itens, "regiao": reg_sel, "forma_pagamento": pag_sel, "parcelas": parc_sel}
+        itens_payload = [{k: v for k, v in item.items() if k != "id"} for item in st.session_state.lista_itens]
+        payload = {"itens": itens_payload, "regiao": reg_sel, "forma_pagamento": pag_sel, "parcelas": parc_sel}
         resp = requests.post("http://127.0.0.1:8000/orcamento", json=payload )
         if resp.status_code == 200:
             st.session_state.resultado_consolidado = resp.json()
