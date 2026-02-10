@@ -32,6 +32,22 @@ def _normalizar_item(item):
         item["id"] = str(uuid.uuid4())
     return item
 
+
+def _adicionar_item(fornecedor, produto, quantidade, tamanho, estampa_frente, estampa_costas):
+    st.session_state.lista_itens.append(_normalizar_item({
+        "fornecedor": fornecedor,
+        "produto": produto,
+        "quantidade": quantidade,
+        "tamanho": tamanho,
+        "estampa_frente": estampa_frente,
+        "estampa_costas": estampa_costas,
+    }))
+
+
+def _remover_item_por_id(item_id):
+    st.session_state.lista_itens = [item for item in st.session_state.lista_itens if item.get("id") != item_id]
+
+
 st.title("📦 Entre-Fios: Sistema de Orçamentos")
 
 with st.expander("➕ Adicionar Produto ao Orçamento", expanded=True):
@@ -47,24 +63,28 @@ with st.expander("➕ Adicionar Produto ao Orçamento", expanded=True):
         tam_sel = st.selectbox("Tamanho", dados_p.get("tamanhos", ["P"]))
     with col3:
         st.info(f"📝 **Descrição:** {dados_p.get('descricao', 'Sem descrição.')}")
-        if st.button("➕ Adicionar à Lista", type="primary"):
-            st.session_state.lista_itens.append(_normalizar_item({
-                "fornecedor": f_sel, "produto": p_sel, "quantidade": q_sel,
-                "tamanho": tam_sel, "estampa_frente": ef_sel, "estampa_costas": ec_sel
-            }))
-            st.rerun()
+        st.button(
+            "➕ Adicionar à Lista",
+            type="primary",
+            on_click=_adicionar_item,
+            args=(f_sel, p_sel, q_sel, tam_sel, ef_sel, ec_sel),
+        )
 
 if st.session_state.lista_itens:
     st.session_state.lista_itens = [_normalizar_item(item) for item in st.session_state.lista_itens]
     st.subheader("📂 Itens do Orçamento")
-    for item in st.session_state.lista_itens:
-        with st.container(border=True):
+    for item in list(st.session_state.lista_itens):
+        card_key = f"item_{item['id']}"
+        with st.container(border=True, key=card_key):
             c1, c2, c3 = st.columns([6, 3, 1])
             c1.write(f"**{item['produto']}** ({item['fornecedor']}) - Qtd: {item['quantidade']}")
             c2.write(f"Tam: {item['tamanho']} | Estampas: {item['estampa_frente']}/{item['estampa_costas']}")
-            if c3.button("🗑️", key=f"del_{item['id']}"):
-                st.session_state.lista_itens = [i for i in st.session_state.lista_itens if i["id"] != item["id"]]
-                st.rerun()
+            c3.button(
+                "🗑️",
+                key=f"del_{item['id']}",
+                on_click=_remover_item_por_id,
+                args=(item["id"],),
+            )
 
     st.divider()
     col_cfg1, col_cfg2 = st.columns(2)
@@ -77,24 +97,28 @@ if st.session_state.lista_itens:
     if st.button("🧮 Calcular Orçamento Completo", type="primary"):
         itens_payload = [{k: v for k, v in item.items() if k != "id"} for item in st.session_state.lista_itens]
         payload = {"itens": itens_payload, "regiao": reg_sel, "forma_pagamento": pag_sel, "parcelas": parc_sel}
-        resp = requests.post("http://127.0.0.1:8000/orcamento", json=payload )
+        resp = requests.post("http://127.0.0.1:8000/orcamento", json=payload)
         if resp.status_code == 200:
             st.session_state.resultado_consolidado = resp.json()
             st.success("Calculado!")
 
 if st.session_state.resultado_consolidado:
     res = st.session_state.resultado_consolidado
-    tab_cli, tab_adm = st.tabs(["📄 Cliente", "🔐 Administrativo"])
-    with tab_cli:
-        cols = st.columns(len(res["opcoes"]))
-        for idx, opt in enumerate(res["opcoes"]):
-            with cols[idx]:
-                with st.container(border=True):
-                    st.metric(opt["transportadora"], f"R$ {opt['venda_total']:,.2f}".replace('.', ','))
-                    pdf = gerar_pdf_orcamento(res, "cliente", idx)
-                    st.download_button(f"📥 PDF {opt['transportadora']}", pdf, f"orcamento_{opt['transportadora']}.pdf", mime="application/pdf")
-    with tab_adm:
-        st.write(f"**Volumes:** {res['volumes']} pacotes (32x40)")
-        st.table(res["opcoes"])
-        pdf_adm = gerar_pdf_orcamento(res, "interno", 0)
-        st.download_button("📥 Baixar Relatório Administrativo", pdf_adm, "relatorio_adm.pdf", mime="application/pdf")
+    opcoes = res.get("opcoes", [])
+    if opcoes:
+        tab_cli, tab_adm = st.tabs(["📄 Cliente", "🔐 Administrativo"])
+        with tab_cli:
+            cols = st.columns(len(opcoes))
+            for idx, opt in enumerate(opcoes):
+                with cols[idx]:
+                    with st.container(border=True):
+                        st.metric(opt["transportadora"], f"R$ {opt['venda_total']:,.2f}".replace('.', ','))
+                        pdf = gerar_pdf_orcamento(res, "cliente", idx)
+                        st.download_button(f"📥 PDF {opt['transportadora']}", pdf, f"orcamento_{opt['transportadora']}.pdf", mime="application/pdf")
+        with tab_adm:
+            st.write(f"**Volumes:** {res['volumes']} pacotes (32x40)")
+            st.table(opcoes)
+            pdf_adm = gerar_pdf_orcamento(res, "interno", 0)
+            st.download_button("📥 Baixar Relatório Administrativo", pdf_adm, "relatorio_adm.pdf", mime="application/pdf")
+    else:
+        st.warning("Não há opções de frete para exibir no momento.")
