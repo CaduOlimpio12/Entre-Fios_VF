@@ -20,10 +20,12 @@ logo_path = os.path.join(root_path, "Logo.png")
 if os.path.exists(logo_path):
     st.image(logo_path, width=220)
 
-if "lista_itens" not in st.session_state:
-    st.session_state.lista_itens = []
-if "resultado_consolidado" not in st.session_state:
-    st.session_state.resultado_consolidado = None
+
+def _garantir_estado_inicial():
+    st.session_state.setdefault("lista_itens", [])
+    st.session_state.setdefault("resultado_consolidado", None)
+
+_garantir_estado_inicial()
 
 
 def _normalizar_item(item):
@@ -34,7 +36,8 @@ def _normalizar_item(item):
 
 
 def _adicionar_item(fornecedor, produto, quantidade, tamanho, estampa_frente, estampa_costas):
-    st.session_state.lista_itens.append(_normalizar_item({
+    _garantir_estado_inicial()
+    st.session_state["lista_itens"].append(_normalizar_item({
         "fornecedor": fornecedor,
         "produto": produto,
         "quantidade": quantidade,
@@ -45,7 +48,8 @@ def _adicionar_item(fornecedor, produto, quantidade, tamanho, estampa_frente, es
 
 
 def _remover_item_por_id(item_id):
-    st.session_state.lista_itens = [item for item in st.session_state.lista_itens if item.get("id") != item_id]
+    _garantir_estado_inicial()
+    st.session_state["lista_itens"] = [item for item in st.session_state["lista_itens"] if item.get("id") != item_id]
 
 
 st.title("📦 Entre-Fios: Sistema de Orçamentos")
@@ -70,10 +74,10 @@ with st.expander("➕ Adicionar Produto ao Orçamento", expanded=True):
             args=(f_sel, p_sel, q_sel, tam_sel, ef_sel, ec_sel),
         )
 
-if st.session_state.lista_itens:
-    st.session_state.lista_itens = [_normalizar_item(item) for item in st.session_state.lista_itens]
+if st.session_state["lista_itens"]:
+    st.session_state["lista_itens"] = [_normalizar_item(item) for item in st.session_state["lista_itens"]]
     st.subheader("📂 Itens do Orçamento")
-    for item in list(st.session_state.lista_itens):
+    for item in list(st.session_state["lista_itens"]):
         card_key = f"item_{item['id']}"
         with st.container(border=True, key=card_key):
             c1, c2, c3 = st.columns([6, 3, 1])
@@ -95,15 +99,15 @@ if st.session_state.lista_itens:
         parc_sel = st.select_slider("Parcelas", options=list(TAXAS_PAGAMENTO[pag_sel].keys())) if pag_sel == "Crédito Parcelado" else 1
 
     if st.button("🧮 Calcular Orçamento Completo", type="primary"):
-        itens_payload = [{k: v for k, v in item.items() if k != "id"} for item in st.session_state.lista_itens]
+        itens_payload = [{k: v for k, v in item.items() if k != "id"} for item in st.session_state["lista_itens"]]
         payload = {"itens": itens_payload, "regiao": reg_sel, "forma_pagamento": pag_sel, "parcelas": parc_sel}
         resp = requests.post("http://127.0.0.1:8000/orcamento", json=payload)
         if resp.status_code == 200:
-            st.session_state.resultado_consolidado = resp.json()
+            st.session_state["resultado_consolidado"] = resp.json()
             st.success("Calculado!")
 
-if st.session_state.resultado_consolidado:
-    res = st.session_state.resultado_consolidado
+if st.session_state["resultado_consolidado"]:
+    res = st.session_state["resultado_consolidado"]
     opcoes = res.get("opcoes", [])
     if opcoes:
         tab_cli, tab_adm = st.tabs(["📄 Cliente", "🔐 Administrativo"])
